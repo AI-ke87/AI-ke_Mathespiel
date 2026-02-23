@@ -1,1 +1,263 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mathe-Hilfe per Spiel</title>
+    <style>
+        body { font-family: 'Comic Sans MS', sans-serif; background-color: #f0f4f8; text-align: center; padding: 10px; }
+        .container { background: white; border-radius: 25px; padding: 20px; max-width: 600px; margin: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 4px solid #4caf50; position: relative; min-height: 450px; }
+        
+        #modeSelection { display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 30px; }
+        .mode-btn-container { margin: 15px; }
+        .mode-btn { background: #42a5f5; color: white; border: none; padding: 20px 40px; font-size: 24px; border-radius: 20px; cursor: pointer; width: 300px; box-shadow: 0 4px 0 #1e88e5; transition: 0.1s; }
+        .mode-btn:active { transform: translateY(2px); box-shadow: none; }
+        .sub-text { font-size: 16px; color: #666; margin-top: 5px; font-weight: bold; }
 
+        #gameUI { display: none; }
+        .stats { display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 10px; color: #666; }
+        
+        .visual-box { 
+            display: flex; flex-wrap: wrap; justify-content: center; min-height: 50px; 
+            margin: 10px 0; background: #fafafa; border-radius: 15px; padding: 15px; border: 2px dashed #eee; 
+            gap: 4px; row-gap: 8px;
+        }
+        
+        .emoji { font-size: 26px; display: inline-block; width: 32px; text-align: center; }
+        .emoji-item:nth-child(10n+5) { margin-right: 25px; }
+        .line-break { flex-basis: 100%; height: 0; }
+
+        .operator { font-size: 50px; font-weight: bold; margin: 10px; color: #ff9800; }
+        .number-label { font-size: 45px; font-weight: bold; color: #2e7d32; }
+        
+        .wrong-container { margin: 10px 0; min-height: 60px; }
+        #wrong-label { font-size: 18px; color: #d32f2f; font-weight: bold; display: none; margin-bottom: 5px; }
+        #wrong-answers-list { 
+            display: flex; justify-content: center; gap: 15px;
+            color: #d32f2f; font-size: 26px; 
+            font-weight: bold; 
+        }
+
+        input { font-size: 40px; width: 120px; text-align: center; border: 3px solid #4caf50; border-radius: 12px; margin: 15px 0 5px 0; outline: none; }
+        .check-btn { background: #ff4081; color: white; border: none; padding: 15px 45px; font-size: 24px; border-radius: 20px; cursor: pointer; box-shadow: 0 4px 0 #c2185b; }
+        
+        #message { font-size: 18px; min-height: 45px; margin-top: 15px; font-weight: bold; line-height: 1.4; padding: 0 10px; }
+        .overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.98); border-radius: 25px; flex-direction: column; justify-content: center; align-items: center; z-index: 10; padding: 20px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="modeSelection">
+        <h1 style="color: #2e7d32;">Wähle dein Level!</h1>
+        <div class="mode-btn-container">
+            <button class="mode-btn" onclick="startGame(20)">Profiaufgaben</button>
+            <div class="sub-text">Aufgaben 1-20 (mit Bildern)</div>
+        </div>
+        <div class="mode-btn-container">
+            <button class="mode-btn" style="background:#7b1fa2; box-shadow: 0 4px 0 #4a148c;" onclick="startGame(100)">Meisteraufgaben</button>
+            <div class="sub-text">Aufgaben 1-100 (nur Zahlen)</div>
+        </div>
+    </div>
+
+    <div id="gameUI">
+        <div id="resultOverlay" class="overlay">
+            <h2 id="resultTitle" style="color:#ff4081">Fertig! 🎈</h2>
+            <p id="resultText" style="font-size: 22px;"></p>
+            <button class="mode-btn" onclick="showSelection()">Nochmal wählen 🔄</button>
+        </div>
+
+        <div class="stats">
+            <span>Aufgabe: <b id="taskCount">1</b>/10</span>
+            <span>Versuche: <b id="tryCount">3</b></span>
+            <span>Sterne: <b id="score">0</b> ⭐</span>
+        </div>
+        
+        <div class="number-label" id="val1">0</div>
+        <div id="box1" class="visual-box"></div>
+        <div class="operator" id="opSymbol">+</div>
+        <div class="number-label" id="val2">0</div>
+        <div id="box2" class="visual-box"></div>
+        <div class="operator">=</div>
+        
+        <input type="number" id="guestInput" inputmode="numeric">
+        
+        <div class="wrong-container">
+            <div id="wrong-label">Diese Zahl hast du schon probiert:</div>
+            <div id="wrong-answers-list"></div>
+        </div>
+
+        <button class="check-btn" onclick="check()">Prüfen!</button>
+        <div id="message"></div>
+    </div>
+</div>
+
+<script>
+    const emojis = ['🚗', '🍰', '🕯️', '🍎', '👋', '🦒', '🎈', '🍕', '🍓', '🐶', '🍦', '🚀'];
+    let correctResult, score, tasksDone, triesLeft, maxNumber;
+    let wrongAnswers = []; 
+    let audioCtx;
+
+    function initAudio() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function playSound(type) {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        if (type === 'click') {
+            osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+        } else if (type === 'win') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.5);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.6);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.6);
+        }
+    }
+
+    function showSelection() {
+        document.getElementById('resultOverlay').style.display = 'none';
+        document.getElementById('gameUI').style.display = 'none';
+        document.getElementById('modeSelection').style.display = 'flex';
+    }
+
+    function startGame(range) {
+        maxNumber = range;
+        score = 0; tasksDone = 0;
+        document.getElementById('modeSelection').style.display = 'none';
+        document.getElementById('gameUI').style.display = 'block';
+        nextTask();
+    }
+
+    function nextTask() {
+        if (tasksDone >= 10) { showFinalResult(); return; }
+        tasksDone++; triesLeft = 3;
+        wrongAnswers = []; 
+        const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+        const isPlus = Math.random() > 0.5;
+        let n1, n2;
+
+        if (isPlus) {
+            correctResult = Math.floor(Math.random() * (maxNumber + 1));
+            n1 = Math.floor(Math.random() * (correctResult + 1));
+            n2 = correctResult - n1;
+            document.getElementById('opSymbol').innerText = "+";
+        } else {
+            n1 = Math.floor(Math.random() * (maxNumber - 4)) + 5;
+            n2 = Math.floor(Math.random() * (n1 + 1));
+            correctResult = n1 - n2;
+            document.getElementById('opSymbol').innerText = "-";
+        }
+        updateUI(n1, n2, emoji);
+    }
+
+    function updateUI(n1, n2, icon) {
+        document.getElementById('taskCount').innerText = tasksDone;
+        document.getElementById('score').innerText = score;
+        document.getElementById('tryCount').innerText = triesLeft;
+        document.getElementById('val1').innerText = n1;
+        document.getElementById('val2').innerText = n2;
+        
+        document.getElementById('wrong-answers-list').innerHTML = ''; 
+        document.getElementById('wrong-label').style.display = 'none';
+        
+        const b1 = document.getElementById('box1');
+        const b2 = document.getElementById('box2');
+        
+        if (maxNumber <= 20) {
+            b1.style.display = 'flex';
+            b2.style.display = 'flex';
+            fillBox(b1, n1, icon);
+            fillBox(b2, n2, icon);
+        } else {
+            b1.style.display = 'none';
+            b2.style.display = 'none';
+        }
+        
+        document.getElementById('guestInput').value = '';
+        document.getElementById('message').innerText = '';
+        document.getElementById('guestInput').focus();
+    }
+
+    function fillBox(box, num, icon) {
+        box.innerHTML = '';
+        for(let i=1; i<=num; i++) {
+            const span = document.createElement('span');
+            span.className = 'emoji-item emoji';
+            span.innerText = icon;
+            box.appendChild(span);
+            if (i % 10 === 0) {
+                const br = document.createElement('div');
+                br.className = 'line-break';
+                box.appendChild(br);
+            }
+        }
+    }
+
+    function check() {
+        initAudio();
+        const inputField = document.getElementById('guestInput');
+        const user = parseInt(inputField.value);
+        const msg = document.getElementById('message');
+        const listDisplay = document.getElementById('wrong-answers-list');
+        const labelDisplay = document.getElementById('wrong-label');
+        
+        if (isNaN(user)) return;
+        playSound('click');
+
+        // NEU: Der angepasste Text für bereits probierte Zahlen
+        if (wrongAnswers.includes(user)) {
+            msg.style.color = "#1e88e5"; // Blau für den Hinweis
+            msg.innerText = "Schau mal oben, da steht die Zahl schon. Die ist leider nicht richtig, versuch es nochmal 😉";
+            inputField.value = '';
+            inputField.focus();
+            return; 
+        }
+
+        if (user === correctResult) {
+            score++; playSound('win');
+            msg.style.color = "green"; msg.innerText = "Klasse! Das ist richtig! 🎉";
+            setTimeout(nextTask, 1500);
+        } else {
+            triesLeft--;
+            document.getElementById('tryCount').innerText = triesLeft;
+            
+            labelDisplay.style.display = 'block';
+            wrongAnswers.push(user);
+            const errorSpan = document.createElement('span');
+            errorSpan.innerText = user;
+            listDisplay.appendChild(errorSpan);
+
+            inputField.value = ''; 
+            inputField.focus();
+
+            if (triesLeft > 0) {
+                msg.style.color = "orange";
+                msg.innerText = `Fast! Du hast noch ${triesLeft} Versuche! 😊`;
+            } else {
+                msg.style.color = "red";
+                msg.innerText = `Die Lösung war ${correctResult}. Nächste Aufgabe!`;
+                setTimeout(nextTask, 2500);
+            }
+        }
+    }
+
+    function showFinalResult() {
+        const overlay = document.getElementById('resultOverlay');
+        const resText = document.getElementById('resultText');
+        overlay.style.display = 'flex';
+        let feedback = (score >= 9) ? "Das ist perfekt! 🏆" : (score >= 6) ? "Toll gemacht! ⭐" : "Gut geübt! 👍";
+        resText.innerText = `Sterne: ${score} / 10\n\n${feedback}`;
+    }
+
+    document.getElementById("guestInput").addEventListener("keypress", (e) => { if(e.key === "Enter") check(); });
+</script>
+</body>
+</html>
